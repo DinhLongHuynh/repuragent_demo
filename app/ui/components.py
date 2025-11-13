@@ -71,24 +71,7 @@ def _display_episodic_learning_section() -> None:
         if st.button("📚 Extract Learning", 
                     use_container_width=True,
                     help="Extract and save task patterns from current conversation"):
-            
-            if 'episodic_orchestrator' in st.session_state and st.session_state.episodic_orchestrator:
-                if 'current_thread_id' in st.session_state:
-                    with st.spinner("Extracting patterns..."):
-                        result = st.session_state.episodic_orchestrator.extract_current_conversation(
-                            st.session_state.current_thread_id
-                        )
-                        
-                        if result['success'] and result.get('episodes_extracted', 0) > 0:
-                            st.success(result.get('message', '✅ Pattern extracted!'))
-                        elif result.get('message'):
-                            st.warning(result['message'])
-                        else:
-                            st.error('Failed to extract patterns')
-                else:
-                    st.warning("No active conversation")
-            else:
-                st.error("Episodic learning system not initialized")
+            st.rerun()
         
         # Display statistics
         if 'episodic_orchestrator' in st.session_state and st.session_state.episodic_orchestrator:
