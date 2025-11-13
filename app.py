@@ -119,7 +119,7 @@ def set_page_config():
 
 def add_demo_info():
     """Add demo-specific information to the main content area."""
-    st.info("🎯 **Demo Mode**: This is a read-only demonstration of the RepurAgent system. For full functionality, please initialize the app at: https://github.com/pharmbio/repuragent")
+    st.info("**Demo Mode**: This is a read-only demonstration of the RepurAgent system. For full functionality, please initialize the app at: https://github.com/pharmbio/repuragent")
 
 
 def update_current_thread_files():
