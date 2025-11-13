@@ -189,7 +189,7 @@ def display_chat_messages(messages: List[Dict[str, str]]) -> None:
                 # Display progress content in expander if it exists
                 if progress_content.strip():
                     # For historical messages, always show expander if there's content
-                    with st.expander("🔄 Processing Progress", expanded=st.session_state.get('expander_states', {}).get('progress_expander', True)):
+                    with st.expander("🔄 Processing Progress", expanded=False):
                         st.markdown(progress_content.strip())
             else:
                 # Regular display for user messages or simple assistant messages
