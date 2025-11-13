@@ -46,27 +46,6 @@ def display_sidebar(app) -> None:
         
         # New Conversation Button
         if st.button("New Task", use_container_width=True):
-            new_conv = create_new_conversation()
-            st.session_state.current_thread_id = new_conv["thread_id"]
-            st.session_state.messages = new_conv["messages"]
-            st.session_state.processed_message_ids = new_conv["processed_message_ids"]
-            st.session_state.processed_tools_ids = new_conv["processed_tools_ids"]
-            st.session_state.thread_ids = load_thread_ids()  # Reload thread list
-            
-            # Reset content deduplication for new task
-            st.session_state.processed_content_hashes = set()
-            
-            # Reset expander states for new task
-            st.session_state.expander_states = {
-                'progress_expander': True,  # Default expanded for progress
-                'show_progress_content': False  # No progress content initially
-            }
-            
-            # Update thread-specific files for the new conversation
-            if hasattr(st.session_state, 'thread_files'):
-                from app.streamlit_app import update_current_thread_files
-                update_current_thread_files()
-            
             st.rerun()
         
         
@@ -176,22 +155,8 @@ def _display_conversation_list(app) -> None:
                 with col2:
                     # Delete button
                     if st.button("🗑️", key=f"del_{thread_id}", help="Delete conversation"):
-                        if len(st.session_state.thread_ids) > 1:
-                            # Remove from persistent storage
-                            remove_thread_id(thread_id)
-                            
-                            # If deleting current conversation, switch to another one
-                            if thread_id == st.session_state.current_thread_id:
-                                remaining_threads = [t for t in st.session_state.thread_ids if t["thread_id"] != thread_id]
-                                if remaining_threads:
-                                    from backend.memory.episodic_memory.conversation import load_conversation
-                                    load_conversation(remaining_threads[0]["thread_id"], app)
-                            
-                            # Reload thread list
-                            st.session_state.thread_ids = load_thread_ids()
-                            st.rerun()
-                        else:
-                            st.warning("Cannot delete the last conversation!")
+                        st.rerun()
+
 
 
 def _display_database_info() -> None:
