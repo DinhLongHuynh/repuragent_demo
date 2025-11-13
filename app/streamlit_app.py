@@ -15,8 +15,6 @@ from backend.memory.episodic_memory.conversation import (
 )
 from app.ui.components import display_header, display_sidebar, display_chat_messages, add_episodic_controls
 from app.ui.formatters import separate_agent_outputs
-from streamlit_report import report
-r = report.Report()
 
 
 
@@ -545,8 +543,6 @@ def main():
     # Add episodic learning controls
     add_episodic_controls()
 
-    r.download()
-    
     # Display standard sidebar (create a basic app for compatibility)
     try:
         basic_app = create_app(use_episodic_learning=False)
