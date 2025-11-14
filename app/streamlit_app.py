@@ -13,8 +13,14 @@ from backend.memory.episodic_memory.conversation import (
     load_conversation,
     get_welcome_message
 )
-from app.ui.components import display_header, display_sidebar, display_chat_messages, add_episodic_controls
-from app.ui.formatters import separate_agent_outputs
+from app.ui.components import (
+    display_header,
+    display_sidebar,
+    display_chat_messages,
+    add_episodic_controls,
+    render_markdown_with_tool_blocks,
+)
+import streamlit_nested_layout
 
 
 
@@ -269,6 +275,19 @@ def create_persistent_dual_display(is_processing=True):
     return final_container, progress_container
 
 
+def _render_stream_section(container, content: str, *, label: str = "🛠️ Tools Calling"):
+    """Render streamed content into a placeholder, preserving tool chronology."""
+    if not container:
+        return
+
+    container.empty()
+    if not content or not content.strip():
+        return
+
+    with container.container():
+        render_markdown_with_tool_blocks(content, label=label, expanded=False)
+
+
 def _is_interrupt_exception(exc: Exception) -> bool:
     """Check if an exception indicates a human-in-the-loop interrupt."""
     message = str(exc).lower()
@@ -326,13 +345,12 @@ def process_stream_updates(
             
             if progress_message:
                 accumulated_progress += progress_message
-                if progress_container:
-                    progress_container.markdown(accumulated_progress)
-                st.session_state.expander_states['show_progress_content'] = True
+                _render_stream_section(progress_container, accumulated_progress)
+            st.session_state.expander_states['show_progress_content'] = True
             
             if final_message:
                 accumulated_final += final_message
-                final_container.markdown(accumulated_final)
+                _render_stream_section(final_container, accumulated_final)
         
         if check_for_interrupts:
             try:
@@ -343,7 +361,7 @@ def process_stream_updates(
                         st.session_state.current_plan = accumulated_final
                         st.session_state.approval_interrupted = True
                         st.session_state.processed_message_ids = local_processed_message_ids
-                        final_container.markdown(accumulated_final)
+                        _render_stream_section(final_container, accumulated_final)
                         return accumulated_progress, accumulated_final, True
             except Exception as state_error:
                 logger.warning(f"Could not check execution state: {state_error}")
@@ -357,7 +375,7 @@ def process_stream_updates(
             st.session_state.current_plan = accumulated_final
             st.session_state.approval_interrupted = True
             st.session_state.processed_message_ids = local_processed_message_ids
-            final_container.markdown(accumulated_final)
+            _render_stream_section(final_container, accumulated_final)
             return accumulated_progress, accumulated_final, True
         raise
 
@@ -449,7 +467,7 @@ def handle_user_input(prompt: str, app=None):
                         final_container,
                         progress_container
                     )
-                    
+
                     # Add refined plan to chat history (only final output - progress is temporary UI)
                     if accumulated_final.strip():
                         st.session_state.messages.append({
@@ -514,7 +532,7 @@ def handle_user_input(prompt: str, app=None):
                     progress_container,
                     check_for_interrupts=True
                 )
-                
+
                 # Always persist the assistant response for traceability (progress stays transient)
                 st.session_state.messages.append({
                     "role": "assistant",

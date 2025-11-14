@@ -1,6 +1,15 @@
 import hashlib
 import json
-from typing import Dict, Any, Set, Optional
+import re
+from typing import Dict, Any, Set, Optional, List, Tuple
+
+
+TOOL_CALL_START_MARKER = "<!--TOOL_CALL_START-->"
+TOOL_CALL_END_MARKER = "<!--TOOL_CALL_END-->"
+_TOOL_BLOCK_PATTERN = re.compile(
+    rf"{TOOL_CALL_START_MARKER}(.*?){TOOL_CALL_END_MARKER}",
+    re.DOTALL
+)
 
 
 def pretty_print_tool_call(name: str, args: Dict[str, Any]) -> str:
@@ -17,7 +26,53 @@ def pretty_print_tool_call(name: str, args: Dict[str, Any]) -> str:
         else:
             output += f"**📦 Args:** `{key}`: `{value}`\n\n"
     
-    return output
+    return _wrap_tool_block(output)
+
+
+def _wrap_tool_block(content: str) -> str:
+    """Wrap any tool-related block so the UI can relocate it."""
+    body = content.strip()
+    if not body:
+        return ""
+    return f"{TOOL_CALL_START_MARKER}\n{body}\n{TOOL_CALL_END_MARKER}\n"
+
+
+def split_content_with_tool_blocks(markdown: Optional[str]) -> List[Tuple[str, str]]:
+    """Split markdown into text/tool segments preserving chronological order."""
+    if not markdown:
+        return []
+
+    segments: List[Tuple[str, str]] = []
+    last_end = 0
+
+    for match in _TOOL_BLOCK_PATTERN.finditer(markdown):
+        start, end = match.span()
+        if start > last_end:
+            text_segment = markdown[last_end:start].strip()
+            if text_segment:
+                segments.append(("text", text_segment))
+        tool_block = match.group(1).strip()
+        if tool_block:
+            segments.append(("tool", tool_block))
+        last_end = end
+
+    trailing = markdown[last_end:].strip()
+    if trailing:
+        segments.append(("text", trailing))
+
+    return segments
+
+
+def extract_tool_call_blocks(markdown: Optional[str]) -> Tuple[Optional[str], List[str]]:
+    """Remove tool call blocks from markdown and return remaining text and extracted blocks."""
+    if not markdown:
+        return markdown, []
+
+    segments = split_content_with_tool_blocks(markdown)
+    text_parts = [content for segment_type, content in segments if segment_type == "text"]
+    tool_blocks = [content for segment_type, content in segments if segment_type == "tool"]
+    cleaned = "\n\n".join(text_parts)
+    return cleaned, tool_blocks
 
 
 def _derive_message_id(msg) -> Optional[str]:
@@ -163,7 +218,8 @@ def separate_agent_outputs(chunk, processed_message_ids, processed_content_hashe
 
             # Tool response message (optional)
             if getattr(msg, "role", None) == "function":
-                agent_output += f"📤 **Result from `{msg.name}`**: {msg.content}\n\n"
+                result_block = f"📤 **Result from `{msg.name}`**: {msg.content}\n\n"
+                agent_output += _wrap_tool_block(result_block)
 
             processed_message_ids.add(msg_id)
         
@@ -225,12 +281,13 @@ def reconstruct_assistant_response(ai_messages):
                 
                 if isinstance(tool_content, (dict, list)):
                     formatted = json.dumps(tool_content, indent=2)
-                    output += (
+                    result_block = (
                         f"📤 **Result from `{tool_name}`**:\n"
                         f"```json\n{formatted}\n```\n\n"
                     )
                 else:
-                    output += f"📤 **Result from `{tool_name}`**: {tool_content}\n\n"
+                    result_block = f"📤 **Result from `{tool_name}`**: {tool_content}\n\n"
+                output += _wrap_tool_block(result_block)
                 continue
 
             # Add message content for AI outputs
