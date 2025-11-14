@@ -6,6 +6,8 @@ from typing import Dict, Any, Set, Optional, List, Tuple
 
 TOOL_CALL_START_MARKER = "<!--TOOL_CALL_START-->"
 TOOL_CALL_END_MARKER = "<!--TOOL_CALL_END-->"
+TOOL_BLOCK_META_PREFIX = "<!--TOOL_BLOCK_META:"
+TOOL_BLOCK_META_SUFFIX = "-->"
 _TOOL_BLOCK_PATTERN = re.compile(
     rf"{TOOL_CALL_START_MARKER}(.*?){TOOL_CALL_END_MARKER}",
     re.DOTALL
@@ -26,23 +28,49 @@ def pretty_print_tool_call(name: str, args: Dict[str, Any]) -> str:
         else:
             output += f"**📦 Args:** `{key}`: `{value}`\n\n"
     
-    return _wrap_tool_block(output)
+    return _wrap_tool_block(output, kind="call", source=name)
 
 
-def _wrap_tool_block(content: str) -> str:
+def _wrap_tool_block(content: str, *, kind: str = "call", source: Optional[str] = None) -> str:
     """Wrap any tool-related block so the UI can relocate it."""
     body = content.strip()
     if not body:
         return ""
-    return f"{TOOL_CALL_START_MARKER}\n{body}\n{TOOL_CALL_END_MARKER}\n"
+    meta_parts = [f"kind={kind}"]
+    if source:
+        meta_parts.append(f"source={source}")
+    metadata = f"{TOOL_BLOCK_META_PREFIX}{'|'.join(meta_parts)}{TOOL_BLOCK_META_SUFFIX}\n"
+    return f"{TOOL_CALL_START_MARKER}\n{metadata}{body}\n{TOOL_CALL_END_MARKER}\n"
 
 
-def split_content_with_tool_blocks(markdown: Optional[str]) -> List[Tuple[str, str]]:
+def _parse_tool_block_metadata(block: str) -> tuple:
+    """Extract metadata and cleaned content from a tool block."""
+    kind = "call"
+    source = None
+    content = block.strip()
+    if content.startswith(TOOL_BLOCK_META_PREFIX):
+        end_idx = content.find(TOOL_BLOCK_META_SUFFIX)
+        if end_idx != -1:
+            meta_segment = content[len(TOOL_BLOCK_META_PREFIX):end_idx]
+            for part in meta_segment.split("|"):
+                if "=" in part:
+                    key, value = part.split("=", 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    if key == "kind" and value:
+                        kind = value
+                    elif key == "source" and value:
+                        source = value
+            content = content[end_idx + len(TOOL_BLOCK_META_SUFFIX):].lstrip()
+    return kind, source, content
+
+
+def split_content_with_tool_blocks(markdown: Optional[str]) -> List[Dict[str, Any]]:
     """Split markdown into text/tool segments preserving chronological order."""
     if not markdown:
         return []
 
-    segments: List[Tuple[str, str]] = []
+    segments: List[Dict[str, Any]] = []
     last_end = 0
 
     for match in _TOOL_BLOCK_PATTERN.finditer(markdown):
@@ -50,15 +78,21 @@ def split_content_with_tool_blocks(markdown: Optional[str]) -> List[Tuple[str, s
         if start > last_end:
             text_segment = markdown[last_end:start].strip()
             if text_segment:
-                segments.append(("text", text_segment))
+                segments.append({"type": "text", "content": text_segment})
         tool_block = match.group(1).strip()
         if tool_block:
-            segments.append(("tool", tool_block))
+            kind, source, cleaned = _parse_tool_block_metadata(tool_block)
+            segments.append({
+                "type": "tool",
+                "kind": kind,
+                "source": source,
+                "content": cleaned
+            })
         last_end = end
 
     trailing = markdown[last_end:].strip()
     if trailing:
-        segments.append(("text", trailing))
+        segments.append({"type": "text", "content": trailing})
 
     return segments
 
@@ -69,8 +103,8 @@ def extract_tool_call_blocks(markdown: Optional[str]) -> Tuple[Optional[str], Li
         return markdown, []
 
     segments = split_content_with_tool_blocks(markdown)
-    text_parts = [content for segment_type, content in segments if segment_type == "text"]
-    tool_blocks = [content for segment_type, content in segments if segment_type == "tool"]
+    text_parts = [segment["content"] for segment in segments if segment.get("type") == "text"]
+    tool_blocks = [segment["content"] for segment in segments if segment.get("type") == "tool"]
     cleaned = "\n\n".join(text_parts)
     return cleaned, tool_blocks
 
@@ -218,8 +252,8 @@ def separate_agent_outputs(chunk, processed_message_ids, processed_content_hashe
 
             # Tool response message (optional)
             if getattr(msg, "role", None) == "function":
-                result_block = f"📤 **Result from `{msg.name}`**: {msg.content}\n\n"
-                agent_output += _wrap_tool_block(result_block)
+                result_block = f"{msg.content}\n\n"
+                agent_output += _wrap_tool_block(result_block, kind="result", source=getattr(msg, "name", None))
 
             processed_message_ids.add(msg_id)
         
@@ -281,13 +315,10 @@ def reconstruct_assistant_response(ai_messages):
                 
                 if isinstance(tool_content, (dict, list)):
                     formatted = json.dumps(tool_content, indent=2)
-                    result_block = (
-                        f"📤 **Result from `{tool_name}`**:\n"
-                        f"```json\n{formatted}\n```\n\n"
-                    )
+                    result_block = f"```json\n{formatted}\n```\n\n"
                 else:
-                    result_block = f"📤 **Result from `{tool_name}`**: {tool_content}\n\n"
-                output += _wrap_tool_block(result_block)
+                    result_block = f"{tool_content}\n\n"
+                output += _wrap_tool_block(result_block, kind="result", source=tool_name)
                 continue
 
             # Add message content for AI outputs

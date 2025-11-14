@@ -1,6 +1,6 @@
 import base64
 import streamlit as st
-from typing import List, Dict
+from typing import List, Dict, Optional
 from app.config import APP_TITLE, LOGO_PATH, SQLITE_DB_PATH
 from backend.memory.episodic_memory.thread_manager import load_thread_ids, remove_thread_id
 from backend.memory.episodic_memory.conversation import create_new_conversation
@@ -151,34 +151,49 @@ def _display_database_info() -> None:
         st.caption(f"📊 Size: {size_mb:.2f} MB")
 
 
-def render_tool_call_block(block: str, *, label: str = "🛠️ Tools Calling", expanded: bool = False) -> None:
+def render_tool_call_block(
+    block: str,
+    *,
+    kind: str = "call",
+    source: Optional[str] = None,
+    label: str = "🛠️ Tools Calling",
+    expanded: bool = False
+) -> None:
     """Render a single tool call block inside an expander."""
     if not block or not block.strip():
         return
 
-    with st.expander(label, expanded=expanded):
-        st.markdown(block.strip())
+    block_content = block.strip()
+    if kind == "result":
+        effective_label = "🧾 Tool Results"
+    else:
+        effective_label = label
 
+    if source:
+        effective_label = f"{effective_label} • {source}"
 
-def render_tool_call_expander(tool_calls: List[str], *, label: str = "🛠️ Tools Calling", expanded: bool = False) -> None:
-    """Render multiple tool call blocks, preserving their sequence."""
-    if not tool_calls:
-        return
-
-    for block in tool_calls:
-        render_tool_call_block(block, label=label, expanded=expanded)
+    with st.expander(effective_label, expanded=expanded):
+        st.markdown(block_content)
 
 
 def render_markdown_with_tool_blocks(markdown: str, *, label: str = "🛠️ Tools Calling", expanded: bool = False) -> None:
     """Render markdown interleaving tool call expanders in chronological order."""
     segments = split_content_with_tool_blocks(markdown)
-    for segment_type, content in segments:
+    for segment in segments:
+        segment_type = segment.get("type")
+        content = segment.get("content", "")
         if segment_type == "text":
             text = content.strip()
             if text:
                 st.markdown(text)
         elif segment_type == "tool":
-            render_tool_call_block(content, label=label, expanded=expanded)
+            render_tool_call_block(
+                content,
+                kind=segment.get("kind", "call"),
+                source=segment.get("source"),
+                label=label,
+                expanded=expanded
+            )
 
 
 def display_chat_messages(messages: List[Dict[str, str]]) -> None:
